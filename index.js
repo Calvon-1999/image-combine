@@ -127,19 +127,14 @@ app.post('/combine', async (req, res) => {
       .png()
       .toBuffer();
 
-      // Convert to base64
-      const base64Image = combinedImageBuffer.toString('base64');
-      const dataUrl = `data:image/png;base64,${base64Image}`;
-
-      return res.json({
-        scene_number: scene_number,
-        combined_image_url: dataUrl,
-        original_count: imageUrls.length,
-        dimensions: {
-          width: maxWidth,
-          height: totalHeight
-        }
+      // Return as binary data
+      res.set({
+        'Content-Type': 'image/png',
+        'Content-Length': combinedImageBuffer.length,
+        'Content-Disposition': `attachment; filename="scene_${scene_number}_combined.png"`
       });
+      
+      return res.send(combinedImageBuffer);
     }
 
     // No images found
