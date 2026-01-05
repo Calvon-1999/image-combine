@@ -1,4 +1,6 @@
 const express = require('express');
+const sharp = require('sharp');
+const axios = require('axios');
 const app = express();
 const port = process.env.PORT || 3000;
 
@@ -12,6 +14,12 @@ app.use((req, res, next) => {
   res.header('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
   next();
 });
+
+// Helper function to download image
+async function downloadImage(url) {
+  const response = await axios.get(url, { responseType: 'arraybuffer' });
+  return Buffer.from(response.data);
+}
 
 // Root endpoint
 app.get('/', (req, res) => {
@@ -35,7 +43,7 @@ app.get('/health', (req, res) => {
 });
 
 // Main endpoint to combine image URLs
-app.post('/combine', (req, res) => {
+app.post('/combine', async (req, res) => {
   try {
     const { scene_number, input } = req.body;
 
@@ -55,13 +63,91 @@ app.post('/combine', (req, res) => {
     }
 
     // Extract all image URLs from the input array
-    const combinedUrls = input
+    const imageUrls = input
       .filter(visual => visual.uploaded_image_url)
       .map(visual => visual.uploaded_image_url);
 
+    // If only 1 image, return it as is
+    if (imageUrls.length === 1) {
+      return res.json({
+        scene_number: scene_number,
+        combined_image_url: imageUrls[0],
+        original_count: 1
+      });
+    }
+
+    // If more than 1 image, merge them
+    if (imageUrls.length > 1) {
+      console.log(`Merging ${imageUrls.length} images for scene ${scene_number}`);
+      
+      // Download all images
+      const imageBuffers = await Promise.all(
+        imageUrls.map(url => downloadImage(url))
+      );
+
+      // Get metadata for all images
+      const imageMetadata = await Promise.all(
+        imageBuffers.map(buffer => sharp(buffer).metadata())
+      );
+
+      // Calculate combined image dimensions (vertical layout for 9:16)
+      const maxWidth = Math.max(...imageMetadata.map(meta => meta.width));
+      const totalHeight = imageMetadata.reduce((sum, meta) => sum + meta.height, 0);
+
+      // Create composite array for sharp
+      let yOffset = 0;
+      const compositeImages = await Promise.all(
+        imageBuffers.map(async (buffer, index) => {
+          const meta = imageMetadata[index];
+          const resizedBuffer = await sharp(buffer)
+            .resize(maxWidth, meta.height, { fit: 'contain', background: { r: 255, g: 255, b: 255, alpha: 1 } })
+            .toBuffer();
+          
+          const composite = {
+            input: resizedBuffer,
+            left: 0,
+            top: yOffset
+          };
+          
+          yOffset += meta.height;
+          return composite;
+        })
+      );
+
+      // Create the combined image
+      const combinedImageBuffer = await sharp({
+        create: {
+          width: maxWidth,
+          height: totalHeight,
+          channels: 4,
+          background: { r: 255, g: 255, b: 255, alpha: 1 }
+        }
+      })
+      .composite(compositeImages)
+      .png()
+      .toBuffer();
+
+      // Convert to base64
+      const base64Image = combinedImageBuffer.toString('base64');
+      const dataUrl = `data:image/png;base64,${base64Image}`;
+
+      return res.json({
+        scene_number: scene_number,
+        combined_image_url: dataUrl,
+        original_count: imageUrls.length,
+        dimensions: {
+          width: maxWidth,
+          height: totalHeight
+        }
+      });
+    }
+
+    // No images found
     res.json({
       scene_number: scene_number,
-      combined_image_urls: combinedUrls
+      combined_image_url: null,
+      original_count: 0,
+      message: 'No images found to combine'
     });
 
   } catch (error) {
