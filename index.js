@@ -37,56 +37,31 @@ app.get('/health', (req, res) => {
 // Main endpoint to combine image URLs
 app.post('/combine', (req, res) => {
   try {
-    let scenesData = req.body;
+    const { scene_number, input } = req.body;
 
-    // Handle wrapper object with "input" property
-    if (scenesData.input) {
-      scenesData = scenesData.input;
-    }
-
-    // Validate input - should be array of arrays (nested structure)
-    if (!Array.isArray(scenesData)) {
+    // Validate input
+    if (!scene_number) {
       return res.status(400).json({
         error: 'Invalid input',
-        message: 'Expected an array of scene arrays'
+        message: 'scene_number is required'
       });
     }
 
-    // Process scenes and combine image URLs
-    const result = scenesData.map(sceneArray => {
-      // Each sceneArray contains multiple visual objects for the same scene
-      if (!Array.isArray(sceneArray) || sceneArray.length === 0) {
-        return null;
-      }
-
-      const sceneNumber = sceneArray[0].scene_number;
-      const imageUrls = [];
-
-      sceneArray.forEach(visual => {
-        if (visual.uploaded_image_url) {
-          imageUrls.push({
-            type: visual.type,
-            name: visual.name,
-            url: visual.uploaded_image_url
-          });
-        }
+    if (!Array.isArray(input)) {
+      return res.status(400).json({
+        error: 'Invalid input',
+        message: 'input must be an array of visuals'
       });
+    }
 
-      return {
-        scene_number: sceneNumber,
-        image_count: imageUrls.length,
-        images: imageUrls,
-        all_urls: imageUrls.map(img => img.url)
-      };
-    }).filter(scene => scene !== null);
-
-    // Sort by scene number
-    result.sort((a, b) => a.scene_number - b.scene_number);
+    // Extract all image URLs from the input array
+    const combinedUrls = input
+      .filter(visual => visual.uploaded_image_url)
+      .map(visual => visual.uploaded_image_url);
 
     res.json({
-      success: true,
-      total_scenes: result.length,
-      scenes: result
+      scene_number: scene_number,
+      combined_image_urls: combinedUrls
     });
 
   } catch (error) {
