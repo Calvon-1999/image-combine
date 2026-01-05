@@ -1,7 +1,7 @@
 {
   "name": "scene-image-combiner",
   "version": "1.0.0",
-  "description": "API to combine image URLs from scene data",
+  "description": "API to merge multiple images into one combined image",
   "main": "index.js",
   "scripts": {
     "start": "node index.js",
@@ -10,12 +10,15 @@
   "keywords": [
     "api",
     "scenes",
-    "images"
+    "images",
+    "merge"
   ],
   "author": "",
   "license": "ISC",
   "dependencies": {
-    "express": "^4.18.2"
+    "express": "^4.18.2",
+    "sharp": "^0.33.1",
+    "axios": "^1.6.2"
   },
   "devDependencies": {
     "nodemon": "^3.0.1"
