@@ -90,26 +90,26 @@ app.post('/combine', async (req, res) => {
         imageBuffers.map(buffer => sharp(buffer).metadata())
       );
 
-      // Calculate combined image dimensions (vertical layout for 9:16)
-      const maxWidth = Math.max(...imageMetadata.map(meta => meta.width));
-      const totalHeight = imageMetadata.reduce((sum, meta) => sum + meta.height, 0);
+      // Calculate combined image dimensions (horizontal layout for 16:9)
+      const totalWidth = imageMetadata.reduce((sum, meta) => sum + meta.width, 0);
+      const maxHeight = Math.max(...imageMetadata.map(meta => meta.height));
 
       // Create composite array for sharp
-      let yOffset = 0;
+      let xOffset = 0;
       const compositeImages = await Promise.all(
         imageBuffers.map(async (buffer, index) => {
           const meta = imageMetadata[index];
           const resizedBuffer = await sharp(buffer)
-            .resize(maxWidth, meta.height, { fit: 'contain', background: { r: 255, g: 255, b: 255, alpha: 1 } })
+            .resize(meta.width, maxHeight, { fit: 'contain', background: { r: 255, g: 255, b: 255, alpha: 1 } })
             .toBuffer();
           
           const composite = {
             input: resizedBuffer,
-            left: 0,
-            top: yOffset
+            left: xOffset,
+            top: 0
           };
           
-          yOffset += meta.height;
+          xOffset += meta.width;
           return composite;
         })
       );
@@ -117,8 +117,8 @@ app.post('/combine', async (req, res) => {
       // Create the combined image
       const combinedImageBuffer = await sharp({
         create: {
-          width: maxWidth,
-          height: totalHeight,
+          width: totalWidth,
+          height: maxHeight,
           channels: 4,
           background: { r: 255, g: 255, b: 255, alpha: 1 }
         }
