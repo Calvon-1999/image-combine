@@ -37,32 +37,40 @@ app.get('/health', (req, res) => {
 // Main endpoint to combine image URLs
 app.post('/combine', (req, res) => {
   try {
-    const scenes = req.body;
+    let scenesData = req.body;
 
-    // Validate input
-    if (!Array.isArray(scenes)) {
+    // Handle wrapper object with "input" property
+    if (scenesData.input) {
+      scenesData = scenesData.input;
+    }
+
+    // Validate input - should be array of arrays (nested structure)
+    if (!Array.isArray(scenesData)) {
       return res.status(400).json({
         error: 'Invalid input',
-        message: 'Expected an array of scene objects'
+        message: 'Expected an array of scene arrays'
       });
     }
 
     // Process scenes and combine image URLs
-    const result = scenes.map(scene => {
-      const sceneNumber = scene.scene_number;
+    const result = scenesData.map(sceneArray => {
+      // Each sceneArray contains multiple visual objects for the same scene
+      if (!Array.isArray(sceneArray) || sceneArray.length === 0) {
+        return null;
+      }
+
+      const sceneNumber = sceneArray[0].scene_number;
       const imageUrls = [];
 
-      if (scene.visuals && Array.isArray(scene.visuals)) {
-        scene.visuals.forEach(visual => {
-          if (visual.uploaded_image_url) {
-            imageUrls.push({
-              type: visual.type,
-              name: visual.name,
-              url: visual.uploaded_image_url
-            });
-          }
-        });
-      }
+      sceneArray.forEach(visual => {
+        if (visual.uploaded_image_url) {
+          imageUrls.push({
+            type: visual.type,
+            name: visual.name,
+            url: visual.uploaded_image_url
+          });
+        }
+      });
 
       return {
         scene_number: sceneNumber,
@@ -70,7 +78,7 @@ app.post('/combine', (req, res) => {
         images: imageUrls,
         all_urls: imageUrls.map(img => img.url)
       };
-    });
+    }).filter(scene => scene !== null);
 
     // Sort by scene number
     result.sort((a, b) => a.scene_number - b.scene_number);
