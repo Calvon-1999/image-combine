@@ -80,6 +80,11 @@ app.post('/combine', async (req, res) => {
     if (imageUrls.length > 1) {
       console.log(`Merging ${imageUrls.length} images for scene ${scene_number}`);
       
+      // Fixed 9:16 aspect ratio dimensions (portrait)
+      const canvasWidth = 1080;
+      const canvasHeight = 1920;
+      const padding = 20; // Padding between images
+      
       // Download all images
       const imageBuffers = await Promise.all(
         imageUrls.map(url => downloadImage(url))
@@ -90,35 +95,51 @@ app.post('/combine', async (req, res) => {
         imageBuffers.map(buffer => sharp(buffer).metadata())
       );
 
-      // Calculate combined image dimensions (horizontal layout for 16:9)
-      const totalWidth = imageMetadata.reduce((sum, meta) => sum + meta.width, 0);
-      const maxHeight = Math.max(...imageMetadata.map(meta => meta.height));
+      // Calculate available space for images (accounting for padding)
+      const availableHeight = canvasHeight - (padding * (imageUrls.length + 1));
+      const heightPerImage = Math.floor(availableHeight / imageUrls.length);
 
-      // Create composite array for sharp
-      let xOffset = 0;
+      // Create composite array for sharp (vertical stacking)
+      let yOffset = padding;
       const compositeImages = await Promise.all(
         imageBuffers.map(async (buffer, index) => {
           const meta = imageMetadata[index];
+          
+          // Calculate scaling to fit within canvas width and allocated height
+          const widthScale = (canvasWidth - 2 * padding) / meta.width;
+          const heightScale = heightPerImage / meta.height;
+          const scale = Math.min(widthScale, heightScale);
+          
+          const newWidth = Math.floor(meta.width * scale);
+          const newHeight = Math.floor(meta.height * scale);
+          
+          // Resize image to fit
           const resizedBuffer = await sharp(buffer)
-            .resize(meta.width, maxHeight, { fit: 'contain', background: { r: 255, g: 255, b: 255, alpha: 1 } })
+            .resize(newWidth, newHeight, { 
+              fit: 'contain', 
+              background: { r: 255, g: 255, b: 255, alpha: 0 } 
+            })
             .toBuffer();
+          
+          // Center horizontally
+          const xOffset = Math.floor((canvasWidth - newWidth) / 2);
           
           const composite = {
             input: resizedBuffer,
             left: xOffset,
-            top: 0
+            top: yOffset
           };
           
-          xOffset += meta.width;
+          yOffset += newHeight + padding;
           return composite;
         })
       );
 
-      // Create the combined image
+      // Create the combined image with 9:16 aspect ratio
       const combinedImageBuffer = await sharp({
         create: {
-          width: totalWidth,
-          height: maxHeight,
+          width: canvasWidth,
+          height: canvasHeight,
           channels: 4,
           background: { r: 255, g: 255, b: 255, alpha: 1 }
         }
