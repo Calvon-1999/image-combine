@@ -67,13 +67,65 @@ app.post('/combine', async (req, res) => {
       .filter(visual => visual.uploaded_image_url)
       .map(visual => visual.uploaded_image_url);
 
-    // If only 1 image, return it as is
+    // If only 1 image, fit it into 9:16 canvas
     if (imageUrls.length === 1) {
-      return res.json({
-        scene_number: scene_number,
-        combined_image_url: imageUrls[0],
-        original_count: 1
+      console.log(`Fitting single image into 9:16 canvas for scene ${scene_number}`);
+      
+      // Fixed 9:16 aspect ratio dimensions (portrait)
+      const canvasWidth = 1080;
+      const canvasHeight = 1920;
+      
+      // Download the image
+      const imageBuffer = await downloadImage(imageUrls[0]);
+      
+      // Get image metadata
+      const meta = await sharp(imageBuffer).metadata();
+      
+      // Calculate scaling to fit within canvas while maintaining aspect ratio
+      const widthScale = canvasWidth / meta.width;
+      const heightScale = canvasHeight / meta.height;
+      const scale = Math.min(widthScale, heightScale);
+      
+      const newWidth = Math.floor(meta.width * scale);
+      const newHeight = Math.floor(meta.height * scale);
+      
+      // Resize image to fit
+      const resizedBuffer = await sharp(imageBuffer)
+        .resize(newWidth, newHeight, { 
+          fit: 'contain', 
+          background: { r: 255, g: 255, b: 255, alpha: 0 } 
+        })
+        .toBuffer();
+      
+      // Center the image on canvas
+      const xOffset = Math.floor((canvasWidth - newWidth) / 2);
+      const yOffset = Math.floor((canvasHeight - newHeight) / 2);
+      
+      // Create the final image with 9:16 aspect ratio
+      const combinedImageBuffer = await sharp({
+        create: {
+          width: canvasWidth,
+          height: canvasHeight,
+          channels: 4,
+          background: { r: 255, g: 255, b: 255, alpha: 1 }
+        }
+      })
+      .composite([{
+        input: resizedBuffer,
+        left: xOffset,
+        top: yOffset
+      }])
+      .png()
+      .toBuffer();
+      
+      // Return as binary data
+      res.set({
+        'Content-Type': 'image/png',
+        'Content-Length': combinedImageBuffer.length,
+        'Content-Disposition': `attachment; filename="scene_${scene_number}_combined.png"`
       });
+      
+      return res.send(combinedImageBuffer);
     }
 
     // If more than 1 image, merge them
